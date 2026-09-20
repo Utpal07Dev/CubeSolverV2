@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Carbon-Fiber Rubik's Cube Solver</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface-border: #2a2e3d;
+      --accent: #00d26a;
+      --text: #f0f2f5;
+      --text-muted: #8b949e;
+
+      /* Cube Facelet Colors */
+      --cube-white: #1e1e1e; /* Carbon-fiber black plastic rim mapped to white */
+      --cube-yellow: #ffd600;
+      --cube-green: #00e676; /* Neon green */
+      --cube-blue: #2979ff;
+      --cube-red: #ff1744;
+      --cube-orange: #ff9100;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+
+    @media (max-width: 960px) {
+      .container { grid-template-columns: 1fr; }
+    }
+
+    header {
+      grid-column: 1 / -1;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--surface-border);
+    }
+    header h1 { font-size: 1.4rem; font-weight: 700; }
+    .badge {
+      font-size: 0.75rem;
+      padding: 4px 8px;
+      border-radius: 4px;
+      background: #232734;
+      color: var(--text-muted);
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      border-radius: 8px;
+      padding: 20px;
+    }
+    .panel h2 {
+      font-size: 1.1rem;
+      margin-bottom: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Face capture controller */
+    .face-tabs {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+    .face-tab {
+      flex: 1;
+      background: #232734;
+      border: 1px solid var(--surface-border);
+      color: var(--text);
+      padding: 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      text-align: center;
+      transition: all 0.15s;
+    }
+    .face-tab.active {
+      background: var(--accent);
+      color: #000;
+      border-color: var(--accent);
+    }
+
+    .camera-wrapper {
+      position: relative;
+      background: #000;
+      border-radius: 6px;
+      overflow: hidden;
+      aspect-ratio: 4/3;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    video, #annotatedPreview {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .cam-overlay {
+      position: absolute;
+      width: 60%;
+      height: 60%;
+      border: 2px dashed rgba(255, 255, 255, 0.7);
+      border-radius: 8px;
+      pointer-events: none;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 14px;
+    }
+    button {
+      padding: 10px 14px;
+      background: #2a2e3d;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: background 0.15s;
+    }
+    button:hover { background: #353a4d; }
+    button.primary {
+      background: var(--accent);
+      color: #05160c;
+    }
+    button.primary:hover { background: #00ba5e; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Cube Net Visualization */
+    .cube-net-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 90px);
+      grid-template-rows: repeat(3, 90px);
+      gap: 6px;
+      justify-content: center;
+      margin: 16px 0;
+    }
+    .facelet-3x3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+      gap: 2px;
+      background: #111;
+      padding: 3px;
+      border-radius: 4px;
+      border: 1px solid var(--surface-border);
+    }
+    .facelet-3x3.net-U { grid-column: 2; grid-row: 1; }
+    .facelet-3x3.net-L { grid-column: 1; grid-row: 2; }
+    .facelet-3x3.net-F { grid-column: 2; grid-row: 2; }
+    .facelet-3x3.net-R { grid-column: 3; grid-row: 2; }
+    .facelet-3x3.net-B { grid-column: 4; grid-row: 2; }
+    .facelet-3x3.net-D { grid-column: 2; grid-row: 3; }
+
+    .sticker {
+      position: relative;
+      border-radius: 2px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.1s;
+    }
+    .sticker:hover { transform: scale(1.08); z-index: 2; }
+    .sticker::before {
+      content: "";
+      position: absolute;
+      width: 70%;
+      height: 70%;
+      background: #111;
+      border-radius: 2px;
+      box-shadow: inset 0 0 2px rgba(255,255,255,0.15);
+    }
+    .sticker.center::after {
+      content: attr(data-face);
+      position: absolute;
+      font-size: 9px;
+      color: #777;
+      font-weight: bold;
+    }
+
+    /* Sticker Color Classes */
+    .c-white  { background-color: var(--cube-white); border: 2px solid #555; }
+    .c-yellow { background-color: var(--cube-yellow); }
+    .c-green  { background-color: var(--cube-green); }
+    .c-blue   { background-color: var(--cube-blue); }
+    .c-red    { background-color: var(--cube-red); }
+    .c-orange { background-color: var(--cube-orange); }
+
+    /* Color picker selector palette */
+    .palette {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      align-items: center;
+      margin: 12px 0;
+      background: #12141c;
+      padding: 8px;
+      border-radius: 6px;
+    }
+    .palette-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid transparent;
+      outline: none;
+    }
+    .palette-btn.selected { border-color: #fff; transform: scale(1.15); }
+
+    /* Solve & Moves */
+    .status-alert {
+      padding: 10px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      margin-top: 10px;
+    }
+    .status-alert.error { background: #3c1418; color: #ff8a80; }
+    .status-alert.info { background: #122838; color: #80d8ff; }
+    .status-alert.success { background: #143522; color: #b9f6ca; }
+
+    .moves-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 12px 0;
+      max-height: 120px;
+      overflow-y: auto;
+    }
+    .move-chip {
+      background: #232734;
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-weight: 700;
+      font-size: 1rem;
+      font-family: monospace;
+    }
+    .move-chip.current {
+      background: var(--accent);
+      color: #000;
+    }
+    .stepper {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 10px;
+      background: #12141c;
+      padding: 12px;
+      border-radius: 6px;
+    }
+    .stepper-view {
+      font-size: 1.4rem;
+      font-family: monospace;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <header>
+      <h1>Carbon-Fiber Rubik's Solver</h1>
+      <span id="backendStatus" class="badge">Connecting...</span>
+    </header>
+
+    <!-- LEFT: Camera & Scan Facelets -->
+    <div class="panel">
+      <h2>
+        <span>Capture Face</span>
+        <span id="scanMethodLabel" class="badge">Awaiting scan</span>
+      </h2>
+
+      <div class="face-tabs" id="faceTabs">
+        <button class="face-tab active" data-face="U">U (Up)</button>
+        <button class="face-tab" data-face="L">L (Left)</button>
+        <button class="face-tab" data-face="F">F (Front)</button>
+        <button class="face-tab" data-face="R">R (Right)</button>
+        <button class="face-tab" data-face="B">B (Back)</button>
+        <button class="face-tab" data-face="D">D (Down)</button>
+      </div>
+
+      <div class="camera-wrapper">
+        <video id="videoFeed" autoplay playsinline></video>
+        <img id="annotatedPreview" style="display:none;" alt="CV Annotated View" />
+        <div class="cam-overlay" id="camOverlay"></div>
+      </div>
+
+      <div class="btn-row">
+        <button id="btnToggleCam">Start Camera</button>
+        <button id="btnCapture" class="primary" disabled>Scan Current Face</button>
+        <label class="button" style="padding:10px 14px; background:#2a2e3d; border-radius:6px; cursor:pointer;">
+          Upload Image
+          <input type="file" id="fileInput" accept="image/*" style="display:none;" />
+        </label>
+      </div>
+
+      <div id="scanStatus" class="status-alert info" style="margin-top:14px;">
+        Align the cube face within the square, then click "Scan Current Face".
+      </div>
+    </div>
+
+    <!-- RIGHT: Unfolded 2D Cube Net & Solver -->
+    <div class="panel">
+      <h2>
+        <span>Cube State & Manual Override</span>
+        <span id="colorCountLabel" class="badge">54 facelets</span>
+      </h2>
+
+      <div style="font-size:0.8rem; color:var(--text-muted);">
+        Select a color below, then click any sticker to correct detection errors:
+      </div>
+
+      <!-- Color Selector Palette -->
+      <div class="palette" id="colorPalette">
+        <button class="palette-btn c-white selected" data-color="white" title="White (Black Rim)"></button>
+        <button class="palette-btn c-yellow" data-color="yellow" title="Yellow"></button>
+        <button class="palette-btn c-green" data-color="green" title="Neon Green"></button>
+        <button class="palette-btn c-blue" data-color="blue" title="Blue"></button>
+        <button class="palette-btn c-red" data-color="red" title="Red"></button>
+        <button class="palette-btn c-orange" data-color="orange" title="Orange"></button>
+      </div>
+
+      <!-- Unfolded 2D Cube Net -->
+      <div class="cube-net-grid" id="cubeNet">
+        <!-- Rendered via JavaScript: U, L, F, R, B, D -->
+      </div>
+
+      <button id="btnSolve" class="primary" style="width:100%; margin-top:8px;">
+        Solve Cube (Kociemba)
+      </button>
+
+      <div id="solveStatus" class="status-alert" style="display:none;"></div>
+
+      <!-- Solution Stepper Component -->
+      <div id="solutionBox" style="display:none; margin-top:16px;">
+        <h3 style="font-size:1rem; margin-bottom:8px;">Solution Steps (<span id="moveCount">0</span> moves)</h3>
+        <div class="moves-container" id="movesList"></div>
+        <div class="stepper">
+          <button id="btnPrevMove">← Previous</button>
+          <div class="stepper-view" id="currentMoveText">Ready</div>
+          <button id="btnNextMove">Next →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <canvas id="snapshotCanvas" style="display:none;"></canvas>
+
+  <script>
+    // State management
+    const FACE_ORDER = ["U", "R", "F", "D", "L", "B"];
+    const NET_FACES = ["U", "L", "F", "R", "B", "D"];
+    let activeFace = "U";
+    let activePaintColor = "white";
+    let mediaStream = null;
+
+    // Cube state: mapping of face -> Array of 9 color names
+    // Default standard solved layout: U=white, R=red, F=green, D=yellow, L=orange, B=blue
+    const cubeState = {
+      U: Array(9).fill("white"),
+      R: Array(9).fill("red"),
+      F: Array(9).fill("green"),
+      D: Array(9).fill("yellow"),
+      L: Array(9).fill("orange"),
+      B: Array(9).fill("blue")
+    };
+
+    let solutionMoves = [];
+    let currentStepIndex = -1;
+
+    // DOM Elements
+    const videoFeed = document.getElementById("videoFeed");
+    const annotatedPreview = document.getElementById("annotatedPreview");
+    const camOverlay = document.getElementById("camOverlay");
+    const btnToggleCam = document.getElementById("btnToggleCam");
+    const btnCapture = document.getElementById("btnCapture");
+    const fileInput = document.getElementById("fileInput");
+    const backendStatus = document.getElementById("backendStatus");
+    const scanStatus = document.getElementById("scanStatus");
+    const solveStatus = document.getElementById("solveStatus");
+    const scanMethodLabel = document.getElementById("scanMethodLabel");
+    const btnSolve = document.getElementById("btnSolve");
+
+    // Initialize Unfolded Net UI
+    function initCubeNet() {
+      const container = document.getElementById("cubeNet");
+      container.innerHTML = "";
+      NET_FACES.forEach(face => {
+        const faceDiv = document.createElement("div");
+        faceDiv.className = `facelet-3x3 net-${face}`;
+        for (let i = 0; i < 9; i++) {
+          const sticker = document.createElement("div");
+          sticker.className = `sticker c-${cubeState[face][i]}`;
+          if (i === 4) {
+            sticker.classList.add("center");
+            sticker.setAttribute("data-face", face);
+          }
+          sticker.addEventListener("click", () => {
+            cubeState[face][i] = activePaintColor;
+            renderCubeNet();
+          });
+          faceDiv.appendChild(sticker);
+        }
+        container.appendChild(faceDiv);
+      });
+      validateState();
+    }
+
+    function renderCubeNet() {
+      NET_FACES.forEach(face => {
+        const faceDiv = document.querySelector(`.facelet-3x3.net-${face}`);
+        const stickers = faceDiv.querySelectorAll(".sticker");
+        stickers.forEach((st, idx) => {
+          st.className = `sticker c-${cubeState[face][idx]}` + (idx === 4 ? " center" : "");
+        });
+      });
+      validateState();
+    }
+
+    function validateState() {
+      const counts = { white: 0, yellow: 0, green: 0, blue: 0, red: 0, orange: 0 };
+      Object.values(cubeState).forEach(arr => arr.forEach(c => counts[c] = (counts[c] || 0) + 1));
+      const countLabel = document.getElementById("colorCountLabel");
+      const isValid = Object.values(counts).every(c => c === 9);
+      countLabel.textContent = Object.entries(counts).map(([col, n]) => `${col[0].toUpperCase()}:${n}`).join(" ");
+      countLabel.style.color = isValid ? "var(--accent)" : "#ff8a80";
+      return isValid;
+    }
+
+    // Color Palette Selection
+    document.querySelectorAll(".palette-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".palette-btn").forEach(b => b.classList.remove("selected"));
+        btn.classList.add("selected");
+        activePaintColor = btn.getAttribute("data-color");
+      });
+    });
+
+    // Face Tab Switching
+    document.querySelectorAll(".face-tab").forEach(tab => {
+      tab.addEventListener("click", () => {
+        document.querySelectorAll(".face-tab").forEach(t => t.classList.remove("active"));
+        tab.classList.add("active");
+        activeFace = tab.getAttribute("data-face");
+        scanStatus.textContent = `Scanning Face ${activeFace}.`;
+        scanStatus.className = "status-alert info";
+        annotatedPreview.style.display = "none";
+        videoFeed.style.display = "block";
+        camOverlay.style.display = "block";
+      });
+    });
+
+    // Camera Access
+    btnToggleCam.addEventListener("click", async () => {
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(t => t.stop());
+        mediaStream = null;
+        videoFeed.srcObject = null;
+        btnToggleCam.textContent = "Start Camera";
+        btnCapture.disabled = true;
+      } else {
+        try {
+          mediaStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 } }
+          });
+          videoFeed.srcObject = mediaStream;
+          btnToggleCam.textContent = "Stop Camera";
+          btnCapture.disabled = false;
+        } catch (err) {
+          alert("Camera access denied or unavailable: " + err.message);
+        }
+      }
+    });
+
+    // Capture from Webcam
+    btnCapture.addEventListener("click", () => {
+      const canvas = document.getElementById("snapshotCanvas");
+      canvas.width = videoFeed.videoWidth || 640;
+      canvas.height = videoFeed.videoHeight || 480;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(videoFeed, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(blob => sendFaceScan(blob), "image/jpeg", 0.9);
+    });
+
+    // Upload from File
+    fileInput.addEventListener("change", (e) => {
+      if (e.target.files && e.target.files[0]) {
+        sendFaceScan(e.target.files[0]);
+      }
+    });
+
+    // Single Face Scan API call
+    async function sendFaceScan(imageBlob) {
+      scanStatus.textContent = `Processing face ${activeFace} with OpenCV...`;
+      scanStatus.className = "status-alert info";
+
+      const formData = new FormData();
+      formData.append("file", imageBlob, "face.jpg");
+
+      try {
+        const resp = await fetch("/api/scan-face", { method: "POST", body: formData });
+        
+        // --- NEW ERROR HANDLING ---
+        if (!resp.ok) {
+          let errorMessage = `Server error ${resp.status}`;
+          try {
+            const err = await resp.json();
+            errorMessage = err.detail || errorMessage;
+          } catch (parseErr) {
+            errorMessage = `Server Error: The backend crashed (Status ${resp.status}). Check your terminal for the Python error.`;
+          }
+          throw new Error(errorMessage);
+        }
+        const data = await resp.json();
+        cubeState[activeFace] = data.colors;
+        renderCubeNet();
+
+        scanMethodLabel.textContent = `Method: ${data.method}`;
+        scanStatus.textContent = `Face ${activeFace} scanned successfully.`;
+        scanStatus.className = "status-alert success";
+
+        // Show annotated preview
+        if (data.annotated_image) {
+          annotatedPreview.src = data.annotated_image;
+          annotatedPreview.style.display = "block";
+          videoFeed.style.display = "none";
+          camOverlay.style.display = "none";
+        }
+
+        // Auto advance to next face tab
+        const nextIdx = (FACE_ORDER.indexOf(activeFace) + 1) % FACE_ORDER.length;
+        const nextFace = FACE_ORDER[nextIdx];
+        const nextTab = document.querySelector(`.face-tab[data-face="${nextFace}"]`);
+        if (nextTab) {
+          setTimeout(() => {
+            nextTab.click();
+          }, 1800);
+        }
+      } catch (err) {
+        scanStatus.textContent = err.message;
+        scanStatus.className = "status-alert error";
+      }
+    }
+
+    // Convert local cubeState to standard 54-char Kociemba facelet string
+    function buildFaceletString() {
+      // 1. Identify centers
+      const centers = {};
+      FACE_ORDER.forEach(f => {
+        centers[f] = cubeState[f][4];
+      });
+
+      // 2. Validate center uniqueness
+      const uniqueColors = new Set(Object.values(centers));
+      if (uniqueColors.size !== 6) {
+        throw new Error("Cube centers must be 6 unique colors. Correct center facelets.");
+      }
+
+      // 3. Map color -> face notation
+      const colorToFace = {};
+      Object.entries(centers).forEach(([f, c]) => {
+        colorToFace[c] = f;
+      });
+
+      // 4. Build string in order U1..U9, R1..R9, F1..F9, D1..D9, L1..L9, B1..B9
+      let faceletStr = "";
+      FACE_ORDER.forEach(f => {
+        cubeState[f].forEach(c => {
+          if (!colorToFace[c]) {
+            throw new Error(`Color '${c}' does not map to any center facelet.`);
+          }
+          faceletStr += colorToFace[c];
+        });
+      });
+      return faceletStr;
+    }
+
+    // Submit to Kociemba
+    btnSolve.addEventListener("click", async () => {
+      solveStatus.style.display = "block";
+      solveStatus.textContent = "Calculating optimal solution...";
+      solveStatus.className = "status-alert info";
+
+      try {
+        const faceletString = buildFaceletString();
+        const resp = await fetch("/api/solve-facelets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ facelets: faceletString })
+        });
+
+        const data = await resp.json();
+        if (!resp.ok) {
+          throw new Error(data.detail || "Failed to solve cube state.");
+        }
+
+        solveStatus.textContent = `Solved in ${data.moveCount} moves!`;
+        solveStatus.className = "status-alert success";
+        displaySolution(data.moves);
+      } catch (err) {
+        solveStatus.textContent = err.message;
+        solveStatus.className = "status-alert error";
+      }
+    });
+
+    // Move explanation helper
+    const MOVE_EXPLANATIONS = {
+      "U": "Top Face: Clockwise 90°",
+      "U'": "Top Face: Counter-Clockwise 90°",
+      "U2": "Top Face: Turn 180°",
+      "D": "Bottom Face: Clockwise 90°",
+      "D'": "Bottom Face: Counter-Clockwise 90°",
+      "D2": "Bottom Face: Turn 180°",
+      "L": "Left Face: Clockwise 90°",
+      "L'": "Left Face: Counter-Clockwise 90°",
+      "L2": "Left Face: Turn 180°",
+      "R": "Right Face: Clockwise 90°",
+      "R'": "Right Face: Counter-Clockwise 90°",
+      "R2": "Right Face: Turn 180°",
+      "F": "Front Face: Clockwise 90°",
+      "F'": "Front Face: Counter-Clockwise 90°",
+      "F2": "Front Face: Turn 180°",
+      "B": "Back Face: Clockwise 90°",
+      "B'": "Back Face: Counter-Clockwise 90°",
+      "B2": "Back Face: Turn 180°"
+    };
+
+    function displaySolution(moves) {
+      solutionMoves = moves;
+      currentStepIndex = -1;
+      document.getElementById("solutionBox").style.display = "block";
+      document.getElementById("moveCount").textContent = moves.length;
+
+      const listContainer = document.getElementById("movesList");
+      listContainer.innerHTML = "";
+      moves.forEach((m, idx) => {
+        const chip = document.createElement("span");
+        chip.className = "move-chip";
+        chip.id = `move-${idx}`;
+        chip.textContent = m;
+        chip.title = MOVE_EXPLANATIONS[m] || "";
+        listContainer.appendChild(chip);
+      });
+      updateStepper();
+    }
+
+    function updateStepper() {
+      document.querySelectorAll(".move-chip").forEach((c, idx) => {
+        c.classList.toggle("current", idx === currentStepIndex);
+      });
+
+      const label = document.getElementById("currentMoveText");
+      if (currentStepIndex < 0) {
+        label.textContent = "Start -> Click Next";
+      } else if (currentStepIndex >= solutionMoves.length) {
+        label.textContent = "Done! Cube Solved 🎉";
+      } else {
+        const mv = solutionMoves[currentStepIndex];
+        const desc = MOVE_EXPLANATIONS[mv] || "";
+        label.textContent = `${mv} (${desc})`;
+      }
+    }
+
+    document.getElementById("btnNextMove").addEventListener("click", () => {
+      if (currentStepIndex < solutionMoves.length) {
+        currentStepIndex++;
+        updateStepper();
+      }
+    });
+
+    document.getElementById("btnPrevMove").addEventListener("click", () => {
+      if (currentStepIndex > 0) {
+        currentStepIndex--;
+        updateStepper();
+      }
+    });
+
+    // Health check on startup
+    fetch("/api/health")
+      .then(res => res.json())
+      .then(data => {
+        if (data.solver) {
+          backendStatus.textContent = "Solver: Ready";
+          backendStatus.style.background = "#143522";
+          backendStatus.style.color = "#b9f6ca";
+        } else {
+          backendStatus.textContent = "Solver: Kociemba Missing";
+          backendStatus.style.background = "#3c1418";
+          backendStatus.style.color = "#ff8a80";
+        }
+      })
+      .catch(() => {
+        backendStatus.textContent = "Backend Offline";
+      });
+
+    // Mount Net
+    initCubeNet();
+  </script>
+</body>
+</html>
